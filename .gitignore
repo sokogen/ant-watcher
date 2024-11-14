@@ -1,0 +1,25 @@
+# Binaries
+bin/
+
+# Build directories
+build/
+
+# Vendor directory
+vendor/
+
+# Go test files
+*.test
+
+# Go coverage files
+coverage.out
+
+# IDE/editor files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Config
+config.json
+.env

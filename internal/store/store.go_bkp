@@ -1,0 +1,211 @@
+// internal/store/store.go
+
+package store
+
+import (
+	"sync"
+
+	"github.com/Melsoft-Games/ant-watcher/internal/logger"
+	"github.com/Melsoft-Games/ant-watcher/internal/models"
+)
+
+type Store struct {
+	Mu            sync.RWMutex                   `json:"-"`
+	Users         map[int64]*models.User         `json:"users"`
+	Organizations map[int64]*models.Organization `json:"organizations"`
+}
+
+// NewStore инициализирует хранилище
+func NewStore() *Store {
+	return &Store{
+		Users:         make(map[int64]*models.User),
+		Organizations: make(map[int64]*models.Organization),
+	}
+}
+
+// AddOrUpdateUser добавляет или обновляет пользователя
+func (s *Store) AddOrUpdateUser(userID int64, user *models.User) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	s.Users[userID] = user
+	logger.Infof("User with ID: %d added/updated", userID)
+}
+
+// AddOrUpdateOrganization добавляет или обновляет организацию
+func (s *Store) AddOrUpdateOrganization(orgID int64, org *models.Organization) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	s.Organizations[orgID] = org
+	logger.Infof("Organization with ID: %d added/updated", orgID)
+}
+
+// AddOrUpdateRepository добавляет или обновляет репозиторий для владельца (организация или пользователь)
+func (s *Store) AddOrUpdateRepository(owner models.Owner, repo *models.Repository) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	repositories := owner.GetRepositories()
+
+	// Инициализируем репозитории, если они ещё не созданы
+	if repositories == nil {
+		switch v := owner.(type) {
+		case *models.Organization:
+			v.Repositories = make(map[int64]*models.Repository)
+		case *models.User:
+			v.Repositories = make(map[int64]*models.Repository)
+		}
+		repositories = owner.GetRepositories()
+	}
+
+	// Добавляем или обновляем репозиторий
+	repositories[*repo.ID] = repo
+	logger.Infof("Repository with ID: %d added/updated for owner with ID: %d", *repo.ID, *owner.GetID())
+}
+
+// AddOrUpdateWorkflow добавляет или обновляет воркфлоу для репозитория
+func (s *Store) AddOrUpdateWorkflow(owner models.Owner, repoID int64, workflow *models.Workflow) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	repo, exists := owner.GetRepositories()[repoID]
+	if !exists {
+		logger.Errorf("Repository with ID %d not found for owner with ID %d", repoID, *owner.GetID())
+		return
+	}
+
+	// Инициализируем мапу воркфлоу, если она ещё не создана
+	if repo.Workflows == nil {
+		repo.Workflows = make(map[int64]*models.Workflow)
+	}
+
+	repo.Workflows[*workflow.ID] = workflow
+	logger.Infof("Workflow with ID: %d added/updated for repository %d", *workflow.ID, repoID)
+}
+
+// AddOrUpdateWorkflowRun добавляет или обновляет запуск воркфлоу
+func (s *Store) AddOrUpdateWorkflowRun(owner models.Owner, repoID, workflowID int64, run *models.WorkflowRun) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	// Ищем репозиторий
+	repo, exists := owner.GetRepositories()[repoID]
+	if !exists {
+		logger.Errorf("Repository with ID %d not found for owner with ID %d", repoID, *owner.GetID())
+		return
+	}
+
+	// Ищем воркфлоу
+	workflow, exists := repo.Workflows[workflowID]
+	if !exists {
+		logger.Errorf("Workflow with ID %d not found in repository %d", workflowID, repoID)
+		return
+	}
+
+	// Инициализируем мапу запусков, если она ещё не создана
+	if workflow.Runs == nil {
+		workflow.Runs = make(map[int64]*models.WorkflowRun)
+	}
+
+	// Добавляем или обновляем запуск воркфлоу
+	workflow.Runs[*run.RunID] = run
+	logger.Infof("Workflow Run with ID: %d added/updated for workflow %d in repository %d", *run.RunID, workflowID, repoID)
+}
+
+// AddOrUpdateJob добавляет или обновляет джоб для запуска воркфлоу
+func (s *Store) AddOrUpdateJob(owner models.Owner, repoID, workflowID, runID, jobID int64, job *models.Job) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	// Ищем репозиторий
+	repo, exists := owner.GetRepositories()[repoID]
+	if !exists {
+		logger.Errorf("Repository with ID %d not found for owner with ID %d", repoID, *owner.GetID())
+		return
+	}
+
+	// Ищем воркфлоу
+	workflow, exists := repo.Workflows[workflowID]
+	if !exists {
+		logger.Errorf("Workflow with ID %d not found in repository %d", workflowID, repoID)
+		return
+	}
+
+	// Ищем запуск воркфлоу
+	run, exists := workflow.Runs[runID]
+	if !exists {
+		logger.Errorf("Workflow Run with ID %d not found in workflow %d", runID, workflowID)
+		return
+	}
+
+	// Инициализируем мапу джобов, если она ещё не создана
+	if run.Jobs == nil {
+		run.Jobs = make(map[int64]*models.Job)
+	}
+
+	// Добавляем или обновляем джоб
+	run.Jobs[jobID] = job
+	logger.Infof("Job with ID: %d added/updated for workflow run %d in repository %d", jobID, runID, repoID)
+}
+
+// AddOrUpdateStep добавляет или обновляет шаг для джоба
+func (s *Store) AddOrUpdateStep(owner models.Owner, repoID, workflowID, runID, jobID, stepID int64, step *models.Step) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	// Ищем репозиторий
+	repo, exists := owner.GetRepositories()[repoID]
+	if !exists {
+		logger.Errorf("Repository with ID %d not found for owner with ID %d", repoID, *owner.GetID())
+		return
+	}
+
+	// Ищем воркфлоу
+	workflow, exists := repo.Workflows[workflowID]
+	if !exists {
+		logger.Errorf("Workflow with ID %d not found in repository %d", workflowID, repoID)
+		return
+	}
+
+	// Ищем запуск воркфлоу
+	run, exists := workflow.Runs[runID]
+	if !exists {
+		logger.Errorf("Workflow Run with ID %d not found in workflow %d", runID, workflowID)
+		return
+	}
+
+	// Ищем джоб
+	job, exists := run.Jobs[jobID]
+	if !exists {
+		logger.Errorf("Job with ID %d not found in workflow run %d", jobID, runID)
+		return
+	}
+
+	// Инициализируем мапу шагов, если она ещё не создана
+	if job.Steps == nil {
+		job.Steps = make(map[int64]*models.Step)
+	}
+
+	// Добавляем или обновляем шаг
+	job.Steps[stepID] = step
+	logger.Infof("Step with ID: %d added/updated for job %d in workflow run %d", stepID, jobID, runID)
+}
+
+// GetUser возвращает пользователя по его ID
+func (s *Store) GetUser(userID int64) (*models.User, bool) {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+
+	user, exists := s.Users[userID]
+	return user, exists
+}
+
+// GetOrganization возвращает организацию по её ID
+func (s *Store) GetOrganization(orgID int64) (*models.Organization, bool) {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+
+	org, exists := s.Organizations[orgID]
+	return org, exists
+}
